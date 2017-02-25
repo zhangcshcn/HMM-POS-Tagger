@@ -4,13 +4,25 @@ import numpy as np
 import csv, sys
 
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
+threshold = 1
+openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
+                 'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
+                 'VB','VBD','VBG','VBN','VBP','VBZ'])
 
 class POStagger_HMM(object):
     def __init__(self):
         self.Pemit = {}     # { Pos : { word : Pemit }}
         self.Words = {}     # { word : set( Pos ) }
         self.PosSize = 0 
-
+        # self.PosCount = {}
+        # self.unkonwnCount = 0   
+        self.suffix = {}
+        # self.morpho = {}    # StartingCap; Cap; multiCap; all Cap; 
+                            # normal 
+        # self.tag  [Pos]
+        # self.label { Pos : enum }
+        # self.unknown  [ P(unknown|Pos) ]  # hapax legomena model
+    
     # sentence model: 
     #   START => { 45 POSes } => END
     # START has a transtion probability. 
@@ -23,7 +35,8 @@ class POStagger_HMM(object):
             ftrain = open(path,'r')
         except:
             print 'Error opening the file... Please try again... '
-        # read the file once and 
+            exit()
+        # read the file once and ...
         for line in csv.reader(ftrain,delimiter='\t'):
             if len(line) == 0:
                 Pos = 'END'
@@ -36,7 +49,7 @@ class POStagger_HMM(object):
                 PosPre = 'START'
                 continue            
             word,Pos = line[0],line[1]
-
+            # word POS
             if word not in self.Words:
                 self.Words[word] = set([Pos])
             else:
@@ -48,7 +61,6 @@ class POStagger_HMM(object):
                 self.Pemit[Pos][word] = 1
             else:
                 self.Pemit[Pos][word] += 1
-
             # transition count
             if PosPre not in Ptrans:
                 Ptrans[PosPre] = {Pos:1}
@@ -56,8 +68,10 @@ class POStagger_HMM(object):
                 Ptrans[PosPre][Pos] = 1
             else:
                 Ptrans[PosPre][Pos] += 1
+
             PosPre = Pos
-        
+        ftrain.close()
+
         self.PosSize = len(self.Pemit)
         self.label = {Pos:enum for enum, Pos in enumerate(self.Pemit)}
         tmp = [(self.label[Pos],Pos) for Pos in self.label]
@@ -65,6 +79,8 @@ class POStagger_HMM(object):
         self.tag = [t[1] for t in tmp]
         self.tag.append('START')
         self.label.update({'END':self.PosSize,'START':self.PosSize})
+        
+        self.unknown = np.zeros(self.PosSize+1)
         # transition probabilities
         self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1])
         for PosPre in Ptrans:
@@ -76,51 +92,72 @@ class POStagger_HMM(object):
         self.TransMat = self.TransMat.T     # For cache friendliness
         # emission probabilities
         for Pos in self.Pemit:
-            total = sum(self.Pemit[Pos].values())
+            vec = np.array(self.Pemit[Pos].values())
+            total = np.sum(vec)
+            if Pos in openClass:
+                self.unknown[self.label[Pos]] = np.sum(vec <= threshold)*1./total
+            # self.PosCount[Pos] = total
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
-        fp = open("Words","w")
-        '''
-        for word in self.Words:
-            fp.write("%s"%word)
-            map(fp.write,["\t%s"%(pos) for pos in self.Words[word]])
-            fp.write("\n")
-        fp.close()
-        '''
 
-    def getPos(self,word):
+    def getPosTransEmit(self,word,i):
+        ret = []
         if word in self.Words:
-            return self.Words[word]
+            for Pos in self.Words[word]:
+                ret.append((Pos,self.Pemit[Pos][word]))
         else:
-            print word, "unknown"
+            # print word
+            # self.unkonwnCount += 1
+            # ret = [(Pos,1) for Pos in self.tag]
+            ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown)]
+        return ret 
 
     def tagSentence(self,snt):
         T = len(snt)
         Vtb = np.zeros([T+2,self.PosSize+1])
-        Trace = np.zeros([T+2,self.PosSize+1])
+        Trace = np.ones([T+2,self.PosSize+1])*-1
         Vtb[0,self.label['START']] = 1
         ret = []
         for i in range(1,T+1):
             # Vtb[i,self.label[Pos]] = np.max( Vtb[i] * trans * emit )
-            word = snt.pop(0)
-            PosSet = self.getPos(word)
-            for Pos in PosSet:
-                emit = self.Pemit[Pos][word]
+            word = snt[i-1]
+            PosSet = self.getPosTransEmit(word,i)
+            # print PosSet
+            for Pos,emit in PosSet:
                 trans = self.TransMat[self.label[Pos]]
                 tmp = Vtb[i-1] * trans * emit
                 Vtb[i,self.label[Pos]] = np.max(tmp)
                 Trace[i,self.label[Pos]] = np.argmax(tmp)
+
         i = T+1
-        tmp = Vtb[i-1] * trans * emit
+        trans = self.TransMat[self.label['END']]
+        tmp = Vtb[i-1] * trans
         Vtb[i,self.label[Pos]] = np.max(tmp)
         Trace[i,self.label[Pos]] = np.argmax(tmp)
         lastPos = np.argmax(tmp)
         for i in range (T,0,-1):
+            # print self.tag[lastPos]
             ret.append(self.tag[lastPos])
             lastPos = int(Trace[i,lastPos])
         ret.reverse()
         # print Trace
-        return ret      
+        # print Vtb
+        return ret     
+
+    def tagFile(self,path,fout):
+        fin = open(path,'r')
+        word = fin.readline()
+        snt = []
+        while word != '':
+            word = word.strip('\n')
+            if word != '':
+                snt.append(word)
+            else:
+                map(fout.write,["%s\t%s\n"%(x,y) for (x,y) in zip(snt,self.tagSentence(snt))])
+                snt = []
+                fout.write("\n")
+            word = fin.readline()
+        fin.close()
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
@@ -130,23 +167,25 @@ if __name__ == '__main__':
     path = dataPath + filePath
     tagger = POStagger_HMM()
     tagger.train(path)
-
-    while True:
-        try:
-            sentence = input('Enter a sentence: ')
-            #sentence = "I don't know what he is talking about !"
-            snt = sentence.split(' ')
+    # print tagger.label
+    if len(sys.argv) < 3:
+        while True:
             try:
-                tag = tagger.tagSentence(snt)
-                print zip(sentence.split(' '),tag)
+                sentence = input('Enter a sentence: ')
+                #sentence = "I don't know what he is talking about !"
+                snt = sentence.split(' ')
+                try:
+                    tag = tagger.tagSentence(snt)
+                    print zip(sentence.split(' '),tag)
+                except:
+                    pass
             except:
-                pass
-        except:
-            break
-    '''
-    for Pos in tagger.Ptrans:
-        print sum(tagger.Ptrans[Pos].values())        
-
-    for Pos in tagger.Pemit:
-        print sum(tagger.Pemit[Pos].values())
-    '''
+                break
+    else: 
+        fout = open(sys.argv[2]+".pos","w")
+        tagger.tagFile(dataPath+sys.argv[2]+".words",fout)
+        fout.close()
+    print tagger.label
+    # print tagger.unkonwnCount
+    print tagger.unknown
+    print filter(lambda (x,y):y==0,zip(tagger.tag,tagger.unknown))
