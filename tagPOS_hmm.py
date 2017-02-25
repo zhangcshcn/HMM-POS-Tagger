@@ -5,6 +5,8 @@ import csv, sys
 
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
 threshold = 1
+suflen = 2
+lam = 1
 openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
                  'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
                  'VB','VBD','VBG','VBN','VBP','VBZ'])
@@ -17,8 +19,8 @@ class POStagger_HMM(object):
         # self.PosCount = {}
         # self.unkonwnCount = 0   
         self.suffix = {}
-        # self.morpho = {}    # StartingCap; Cap; multiCap; all Cap; 
-                            # normal 
+        # self.morpho = {}  # normal; init+Cap; Cap; multiCap; 
+                            # hyphen; hyphenC+Cap; digit; number+sym
         # self.tag  [Pos]
         # self.label { Pos : enum }
         # self.unknown  [ P(unknown|Pos) ]  # hapax legomena model
@@ -51,9 +53,11 @@ class POStagger_HMM(object):
             word,Pos = line[0],line[1]
             # word POS
             if word not in self.Words:
-                self.Words[word] = set([Pos])
+                self.Words[word] = { Pos : 1 }
+            elif Pos not in self.Words[word]:
+                self.Words[word][Pos] = 1
             else:
-                self.Words[word] |= set([Pos])
+                self.Words[word][Pos] += 1
             # emission count
             if Pos not in self.Pemit:
                 self.Pemit[Pos] = {word:1}
@@ -80,6 +84,25 @@ class POStagger_HMM(object):
         self.tag.append('START')
         self.label.update({'END':self.PosSize,'START':self.PosSize})
         
+        # suffix model
+        for word in self.Words:
+            numsuf = suflen if len(word)>=suflen else len(word)
+            sufl = [word[-i:] for i in range (1,numsuf+1)] 
+            for suf in sufl:
+                if suf not in self.suffix:
+                    self.suffix[suf] = np.zeros(self.PosSize+1)
+                for Pos in self.Words[word].keys():
+                    self.suffix[suf][self.label[Pos]] += self.Words[word][Pos]
+        for suf in self.suffix.keys():
+            total = np.sum(self.suffix[suf])
+            if total >= 10:
+                self.suffix[suf] *= 1./np.sum(self.suffix[suf])
+            else:
+                self.suffix.pop(suf)
+
+        # print len(self.suffix)
+        # print self.suffix
+
         self.unknown = np.zeros(self.PosSize+1)
         # transition probabilities
         self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1])
@@ -99,17 +122,23 @@ class POStagger_HMM(object):
             # self.PosCount[Pos] = total
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
+        for suf in self.suffix:
+            self.suffix[suf] = self.suffix[suf] * lam + (1-lam)*self.unknown
+
 
     def getPosTransEmit(self,word,i):
         ret = []
         if word in self.Words:
-            for Pos in self.Words[word]:
+            for Pos in self.Words[word].keys():
                 ret.append((Pos,self.Pemit[Pos][word]))
         else:
-            # print word
-            # self.unkonwnCount += 1
-            # ret = [(Pos,1) for Pos in self.tag]
-            ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown)]
+            print word
+            sufl = suflen if len(word) >= suflen else len(word)
+            suf = word[-sufl:]
+            if suf in self.suffix:
+                ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown*self.suffix[suf])]
+            else: 
+                ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown)]
         return ret 
 
     def tagSentence(self,snt):
@@ -185,7 +214,7 @@ if __name__ == '__main__':
         fout = open(sys.argv[2]+".pos","w")
         tagger.tagFile(dataPath+sys.argv[2]+".words",fout)
         fout.close()
-    print tagger.label
+    # print tagger.label
     # print tagger.unkonwnCount
-    print tagger.unknown
-    print filter(lambda (x,y):y==0,zip(tagger.tag,tagger.unknown))
+    # print tagger.unknown
+    # print filter(lambda (x,y):y!=0,zip(tagger.tag,tagger.unknown))
