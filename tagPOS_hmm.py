@@ -187,6 +187,7 @@ class POStagger_HMM(object):
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
                 #self.Pemit[Pos][word] = np.log2(self.Pemit[Pos][word])
+        self.unknown /= np.sum(self.unknown)
         #self.unknown = np.log2(self.unknown)
 
 
