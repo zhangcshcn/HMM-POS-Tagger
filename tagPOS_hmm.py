@@ -13,18 +13,13 @@ class POStagger_HMM(object):
         self.Pemit = {}     # { Pos : { word : Pemit }}
         self.Words = {}     # { word : { Pos : count} ) }
         self.PosSize = 0 
-        # self.PosCount = {}
-        # self.unkonwnCount = 0   
         self.suffix = {}
         self.openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
                  'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
                  'VB','VBD','VBG','VBN','VBP','VBZ','SYM'])
-        self.morphCatNum = 16  # normal; Cap; multiCap; 
-                            # hyphen; hyphen+Cap; digit; number
-        # self.tag  [Pos]
-        # self.label { Pos : enum }
-        # self.unknown  [ P(unknown|Pos) ]  # hapax legomena model
-    
+        self.morphCatNum = 16  
+
+    # Use regex to determine the morphological features of words
     def morphCat(self,word):
         if re.match('\A[a-zA-Z]+\Z',word):
         # pure words
@@ -71,13 +66,14 @@ class POStagger_HMM(object):
         else:
             return 14
 
-    # sentence model: 
-    #   START => { 45 POSes } => END
-    # START has a transtion probability. 
-    # Words are case sensitive. 
+    # - Train the 2nd-Order Markov Model. Compute the emission rate 
+    #   and the 2nd-order transition probabilities. 
+    # - Use the Hapax Legomena with Open Class. Train models with  
+    #   morphological and suffix features respectively. 
     def train(self,path):
         PosPre = 'START'
-        Ptrans= { PosPre:{} }   # { PosPre: { Pos : count }}
+        PosPP = ''
+        Ptrans= { PosPre:{} }   # { (Pos,Pos): { Pos : count }}
         self.path = path
         try:
             ftrain = open(path,'r')
@@ -88,12 +84,12 @@ class POStagger_HMM(object):
         for line in csv.reader(ftrain,delimiter='\t'):
             if len(line) == 0:
                 Pos = 'END'
-                if PosPre not in Ptrans:
-                    Ptrans[PosPre] = {Pos:1}
-                elif Pos not in Ptrans[PosPre]:
-                    Ptrans[PosPre][Pos] = 1
+                if (PosPP,PosPre) not in Ptrans:
+                    Ptrans[(PosPP,PosPre)] = {Pos:1}
+                elif Pos not in Ptrans[(PosPP,PosPre)]:
+                    Ptrans[(PosPP,PosPre)][Pos] = 1
                 else:
-                    Ptrans[PosPre][Pos] += 1
+                    Ptrans[(PosPP,PosPre)][Pos] += 1
                 PosPre = 'START'
                 continue            
             word,Pos = line[0],line[1]
@@ -112,17 +108,23 @@ class POStagger_HMM(object):
             else:
                 self.Pemit[Pos][word] += 1
             # transition count
-            if PosPre not in Ptrans:
-                Ptrans[PosPre] = {Pos:1}
-            elif Pos not in Ptrans[PosPre]:
-                Ptrans[PosPre][Pos] = 1
+            if PosPre == 'START':
+                if Pos not in Ptrans['START']:
+                    Ptrans['START'][Pos] = 1
+                else:
+                    Ptrans['START'][Pos] += 1
             else:
-                Ptrans[PosPre][Pos] += 1
-
-            PosPre = Pos
+                if (PosPP,PosPre) not in Ptrans:
+                    Ptrans[(PosPP,PosPre)] = { Pos : 1 } 
+                elif Pos not in Ptrans[(PosPP,PosPre)]:
+                    Ptrans[(PosPP,PosPre)][Pos] = 1
+                else:
+                    Ptrans[(PosPP,PosPre)][Pos] += 1
+            PosPP = PosPre
+            PosPre = Pos 
         ftrain.close()
-
         self.PosSize = len(self.Pemit)
+        self.PosTupSize = len(Ptrans)
         self.label = {Pos:enum for enum, Pos in enumerate(self.Pemit)}
         tmp = [(self.label[Pos],Pos) for Pos in self.label]
         tmp.sort()
@@ -130,7 +132,7 @@ class POStagger_HMM(object):
         self.tag.append('START')
         self.label.update({'END':self.PosSize,'START':self.PosSize})
         
-        # suffix model
+        # Suffix model
         for word in self.Words:
             numsuf = suflen if len(word)>=suflen else len(word)
             sufl = [word[-i:] for i in range (1,numsuf+1)] 
@@ -147,37 +149,41 @@ class POStagger_HMM(object):
                 #self.suffix[suf] = np.log2(self.suffix[suf])
             else:
                 self.suffix.pop(suf)
-        # morphological model
+        # Morphological model
         self.morph = np.zeros([self.morphCatNum,self.PosSize+1])
         for word in self.Words:
             cat = self.morphCat(word)
-            if cat == 9:
-                print word 
+            # if cat == 9:
+            #     print word 
             for Pos in self.Words[word].keys():
                 if cat > 1:
                     self.morph[cat,self.label[Pos]] += 1
                 else:
                     if self.Words[word][Pos] <= threshold:
                         self.morph[cat,self.label[Pos]] += 1
-        print np.sum(self.morph,axis=1)
         for vec in self.morph:
             vec = vec+1
             vec /= np.sum(vec)
             #vec = np.log2(vec)
 
-        self.unknown = np.zeros(self.PosSize+1)
-        # transition probabilities
-        self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1])
+        # Transition probabilities
+        self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1,self.PosSize+1])
         for PosPre in Ptrans:
-            i = self.label[PosPre]
+            if PosPre == 'START':
+                i = self.label['START']
+                j = i
+            else:
+                i = self.label[PosPre[0]]
+                j = self.label[PosPre[1]]
             for Pos in Ptrans[PosPre]:
-                self.TransMat[i,self.label[Pos]] = Ptrans[PosPre][Pos] 
-        for vec in self.TransMat:
-            vec += 1    # smooth
-            vec /= np.sum(vec)
+                self.TransMat[i,j,self.label[Pos]] = Ptrans[PosPre][Pos] 
+        self.TransMat += 1
+        for mat in self.TransMat:
+            for vec in mat:
+                vec /= np.sum(vec)
             #vec = np.log2(vec)
-        self.TransMat = self.TransMat.T     # For cache friendliness
-        # emission probabilities
+        # Emission rates
+        self.unknown = np.zeros(self.PosSize+1)
         for Pos in self.Pemit:
             vec = np.array(self.Pemit[Pos].values())
             total = np.sum(vec)
@@ -190,7 +196,7 @@ class POStagger_HMM(object):
         self.unknown /= np.sum(self.unknown)
         #self.unknown = np.log2(self.unknown)
 
-
+    # Generate the emission rate for unknown words
     def getPosTransEmit(self,word):
         ret = []
         if word in self.Words:
@@ -214,41 +220,59 @@ class POStagger_HMM(object):
                     total = sum(self.Words[word.lower()].values())
                     for Pos in self.Words[word.lower()]:
                         ret[self.label[Pos]] = (Pos,ret[self.label[Pos]][1] + self.Words[word.lower()][Pos]*1./total)
-            
         return ret 
 
+    # Solve the HMM using Viterbi Algorithm. 
+    # Assume 2nd-Order Markov Model. 
     def tagSentence(self,snt):
         T = len(snt)
-        Vtb = np.zeros([T+2,self.PosSize+1])
-        Trace = np.ones([T+2,self.PosSize+1])*-1
-        Vtb[0,self.label['START']] = 1
+        Vtb = np.zeros([T+2,self.PosSize+1,self.PosSize+1])
+        Trace = np.ones([T+2,self.PosSize+1,self.PosSize+1])*-1
+        Vtb[0,self.label['START'],:] += 1
         # Vtb = np.log2(Vtb)
         ret = []
         for i in range(1,T+1):
-            # Vtb[i,self.label[Pos]] = np.max( Vtb[i] * trans * emit )
             word = snt[i-1]
             PosSet = self.getPosTransEmit(word)
-            # print PosSet
             for Pos,emit in PosSet:
-                trans = self.TransMat[self.label[Pos]]
-                tmp = Vtb[i-1] * trans * emit 
-                # tmp = Vtb[i-1] + trans + emit
-                Vtb[i,self.label[Pos]] = np.max(tmp) *10
-                Trace[i,self.label[Pos]] = np.argmax(tmp)
-
+                ''' The old fashion way 
+                for j in range(self.PosSize+1): 
+                # Vtb[t,s^{-1},s] = \max_{s^{-2}}
+                #                      Vtb[t-1,s^{-2},s^{-1}] 
+                #                    * P(s|s^{-2}s^{-1})} 
+                #                    * P(w_i|s)
+                    tmp = Vtb[i-1,:,j] * self.TransMat[:,j,self.label[Pos]] * emit *100
+                    # tmp = Vtb[i-1] + trans + emit
+                    Vtb[i,j,self.label[Pos]] = np.max(tmp)
+                    Trace[i,j,self.label[Pos]] = np.argmax(tmp)
+                ''' 
+                # The matricized method outperform the old-fashioned way
+                # by more than 10 times. 
+                tmp = Vtb[i-1] * self.TransMat[:,:,self.label[Pos]] 
+                Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0) * emit *100
+                Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
         i = T+1
-        trans = self.TransMat[self.label['END']]
-        tmp = Vtb[i-1] * trans
-        # tmp = Vtb[i-1] + trans
-        Vtb[i,self.label[Pos]] = np.max(tmp)
-        Trace[i,self.label[Pos]] = np.argmax(tmp)
-        lastPos = np.argmax(tmp)
+        ''' The old fashioned way
+        for j in range(self.PosSize+1):
+            tmp = Vtb[i-1,:,j] * self.TransMat[:,j,self.label['END']] *100
+            # tmp = Vtb[i-1] + trans
+            Vtb[i,j,self.label['END']] = np.max(tmp) 
+            Trace[i,j,self.label['END']] = np.argmax(tmp)
+        '''
+        Pos = 'END'
+        tmp = Vtb[i-1] * self.TransMat[:,:,self.label[Pos]] 
+        Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0)
+        Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
+        ToPos = self.label['END']
+        FromPos = int(np.argmax(Vtb[i,:,ToPos]))
+        PrePos = int(Trace[i,FromPos,ToPos])
         for i in range (T,0,-1):
-            # print self.tag[lastPos]
-            ret.append(self.tag[lastPos])
-            lastPos = int(Trace[i,lastPos])
+            ret.append(self.tag[FromPos])
+            ToPos = FromPos
+            FromPos = PrePos
+            PrePos = int(Trace[i,FromPos,ToPos])
         ret.reverse()
-        return ret     
+        return ret  
 
     def tagFile(self,path,fout):
         fin = open(path,'r')
@@ -273,16 +297,15 @@ if __name__ == '__main__':
     path = dataPath + filePath
     tagger = POStagger_HMM()
     tagger.train(path)
-    # print tagger.label
     if len(sys.argv) < 3:
         while True:
             try:
                 sentence = input('Enter a sentence: ')
-                #sentence = "I don't know what he is talking about !"
                 snt = sentence.split(' ')
                 try:
                     tag = tagger.tagSentence(snt)
-                    print zip(sentence.split(' '),tag)
+                    for x,y in zip(sentence.split(' '),tag):
+                        print x,'\t',y
                 except:
                     pass
             except:
@@ -291,7 +314,4 @@ if __name__ == '__main__':
         fout = open(sys.argv[2]+".pos","w")
         tagger.tagFile(dataPath+sys.argv[2]+".words",fout)
         fout.close()
-    # print tagger.label
-    # print tagger.unkonwnCount
-    # print tagger.unknown
-    # print filter(lambda (x,y):y!=0,zip(tagger.tag,tagger.unknown))
+
