@@ -198,9 +198,9 @@ class POStagger_HMM(object):
             # print PosSet
             for Pos,emit in PosSet:
                 trans = self.TransMat[self.label[Pos]]
-                tmp = Vtb[i-1] * trans * emit
+                tmp = Vtb[i-1] * trans * emit 
                 # tmp = Vtb[i-1] + trans + emit
-                Vtb[i,self.label[Pos]] = np.max(tmp)
+                Vtb[i,self.label[Pos]] = np.max(tmp) *10
                 Trace[i,self.label[Pos]] = np.argmax(tmp)
 
         i = T+1
