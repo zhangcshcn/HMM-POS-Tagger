@@ -5,14 +5,13 @@ import csv, sys, re
 
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
 threshold = 1
-suflen = 4
-lam = 1
-eps = 1e-100
+suflen = 2
+lam = 0.3
 
 class POStagger_HMM(object):
     def __init__(self):
         self.Pemit = {}     # { Pos : { word : Pemit }}
-        self.Words = {}     # { word : set( Pos ) }
+        self.Words = {}     # { word : { Pos : count} ) }
         self.PosSize = 0 
         # self.PosCount = {}
         # self.unkonwnCount = 0   
@@ -20,13 +19,13 @@ class POStagger_HMM(object):
         self.openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
                  'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
                  'VB','VBD','VBG','VBN','VBP','VBZ','SYM'])
-        self.morphCatNum = 8  # normal; Cap; multiCap; 
+        self.morphCatNum = 16  # normal; Cap; multiCap; 
                             # hyphen; hyphen+Cap; digit; number
         # self.tag  [Pos]
         # self.label { Pos : enum }
         # self.unknown  [ P(unknown|Pos) ]  # hapax legomena model
     
-    def morphCat(sefl,word):
+    def morphCat(self,word):
         if re.match('\A[a-zA-Z]+\Z',word):
         # pure words
             if re.match('\A[a-z]+\Z',word):
@@ -35,25 +34,42 @@ class POStagger_HMM(object):
             elif re.match('\A[A-Z][a-z]*\Z',word):
             # Cap word
                 return 1
-            else:
+            elif re.match('\A[A-Z]+\Z',word):
                 return 2
-        elif '-' in word and re.match('\A\D+\Z',word):
-        # hyphen, no digits
-            if re.search('[A-Z]',word):
-            # hyphen+Cap
-                return 3
             else:
-                return 4 
+                return 3
+        elif '-' in word:
+        # hyphen 
+            if re.match('\A[A-Z][^-]*-[A-Z].*\Z',word):
+            # Cap-Cap
+                return 4
+            elif re.match('\A\d\d?\d?(,?\d\d\d)*(.\d*)?-.*\Z',word):
+            # number-seq 
+                return 5
+            elif re.match('\A\D+-\d+\Z',word):
+            # seq-number
+                return 6
+            elif re.match('\A[a-z]+-[A-Z].*\Z',word):
+                return 7
+            elif re.match('\A[A-Z]+-[a-z].*\Z',word):
+                return 15
+            elif word.count('-') > 1:
+                return 8
+            else:
+                return  9
         elif re.search('\d',word):
         # digits 
             if re.match('\A[+-]?\d\d?\d?(,?\d\d\d)*(.\d*)?\Z',word):
             # number
-                return 5 
+                return 10
             else:
-                return 6 
-        else: 
-            return 7 
-
+                return 11
+        elif '\/' in word: 
+            return 12
+        elif '.' in word:
+            return 13
+        else:
+            return 14
 
     # sentence model: 
     #   START => { 45 POSes } => END
@@ -126,6 +142,7 @@ class POStagger_HMM(object):
         for suf in self.suffix.keys():
             total = np.sum(self.suffix[suf])
             if total >= 5:
+                self.suffix[suf] += 1
                 self.suffix[suf] *= 1./np.sum(self.suffix[suf])
                 #self.suffix[suf] = np.log2(self.suffix[suf])
             else:
@@ -134,10 +151,18 @@ class POStagger_HMM(object):
         self.morph = np.zeros([self.morphCatNum,self.PosSize+1])
         for word in self.Words:
             cat = self.morphCat(word)
+            if cat == 9:
+                print word 
             for Pos in self.Words[word].keys():
-                self.morph[cat,self.label[Pos]] += 1
+                if cat > 1:
+                    self.morph[cat,self.label[Pos]] += 1
+                else:
+                    if self.Words[word][Pos] <= threshold:
+                        self.morph[cat,self.label[Pos]] += 1
+        print np.sum(self.morph,axis=1)
         for vec in self.morph:
-            vec *= 1./np.sum(vec)
+            vec = vec+1
+            vec /= np.sum(vec)
             #vec = np.log2(vec)
 
         self.unknown = np.zeros(self.PosSize+1)
@@ -148,6 +173,7 @@ class POStagger_HMM(object):
             for Pos in Ptrans[PosPre]:
                 self.TransMat[i,self.label[Pos]] = Ptrans[PosPre][Pos] 
         for vec in self.TransMat:
+            vec += 1    # smooth
             vec /= np.sum(vec)
             #vec = np.log2(vec)
         self.TransMat = self.TransMat.T     # For cache friendliness
@@ -164,14 +190,13 @@ class POStagger_HMM(object):
         #self.unknown = np.log2(self.unknown)
 
 
-    def getPosTransEmit(self,word,i):
+    def getPosTransEmit(self,word):
         ret = []
         if word in self.Words:
             for Pos in self.Words[word].keys():
                 ret.append((Pos,self.Pemit[Pos][word]))
         else:
             cat = self.morphCat(word)
-            # print word, cat
             flag = 0
             numsuf = suflen if len(word)>=suflen else len(word)
             sufl = [word[-i:] for i in range (numsuf,0,-1)] 
@@ -182,6 +207,13 @@ class POStagger_HMM(object):
                     break
             if flag == 0:
                 ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown*self.morph[cat])]
+            
+            if cat < 4:
+                if word.lower() in self.Words: 
+                    total = sum(self.Words[word.lower()].values())
+                    for Pos in self.Words[word.lower()]:
+                        ret[self.label[Pos]] = (Pos,ret[self.label[Pos]][1] + self.Words[word.lower()][Pos]*1./total)
+            
         return ret 
 
     def tagSentence(self,snt):
@@ -194,7 +226,7 @@ class POStagger_HMM(object):
         for i in range(1,T+1):
             # Vtb[i,self.label[Pos]] = np.max( Vtb[i] * trans * emit )
             word = snt[i-1]
-            PosSet = self.getPosTransEmit(word,i)
+            PosSet = self.getPosTransEmit(word)
             # print PosSet
             for Pos,emit in PosSet:
                 trans = self.TransMat[self.label[Pos]]
@@ -215,10 +247,6 @@ class POStagger_HMM(object):
             ret.append(self.tag[lastPos])
             lastPos = int(Trace[i,lastPos])
         ret.reverse()
-        if 'START' in ret:
-            print snt 
-            print Trace
-            print Vtb
         return ret     
 
     def tagFile(self,path,fout):
