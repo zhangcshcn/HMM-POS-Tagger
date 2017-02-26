@@ -1,15 +1,13 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
 import numpy as np 
-import csv, sys
+import csv, sys, re 
 
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
 threshold = 1
-suflen = 2
+suflen = 4
 lam = 1
-openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
-                 'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
-                 'VB','VBD','VBG','VBN','VBP','VBZ'])
+eps = 1e-100
 
 class POStagger_HMM(object):
     def __init__(self):
@@ -19,12 +17,44 @@ class POStagger_HMM(object):
         # self.PosCount = {}
         # self.unkonwnCount = 0   
         self.suffix = {}
-        # self.morpho = {}  # normal; init+Cap; Cap; multiCap; 
-                            # hyphen; hyphenC+Cap; digit; number+sym
+        self.openClass = set([':','CD','FW','IN','JJ','JJR','JJS','NN',\
+                 'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
+                 'VB','VBD','VBG','VBN','VBP','VBZ','SYM'])
+        self.morphCatNum = 8  # normal; Cap; multiCap; 
+                            # hyphen; hyphen+Cap; digit; number
         # self.tag  [Pos]
         # self.label { Pos : enum }
         # self.unknown  [ P(unknown|Pos) ]  # hapax legomena model
     
+    def morphCat(sefl,word):
+        if re.match('\A[a-zA-Z]+\Z',word):
+        # pure words
+            if re.match('\A[a-z]+\Z',word):
+            # all lower case word
+                return 0
+            elif re.match('\A[A-Z][a-z]*\Z',word):
+            # Cap word
+                return 1
+            else:
+                return 2
+        elif '-' in word and re.match('\A\D+\Z',word):
+        # hyphen, no digits
+            if re.search('[A-Z]',word):
+            # hyphen+Cap
+                return 3
+            else:
+                return 4 
+        elif re.search('\d',word):
+        # digits 
+            if re.match('\A[+-]?\d\d?\d?(,?\d\d\d)*(.\d*)?\Z',word):
+            # number
+                return 5 
+            else:
+                return 6 
+        else: 
+            return 7 
+
+
     # sentence model: 
     #   START => { 45 POSes } => END
     # START has a transtion probability. 
@@ -92,16 +122,28 @@ class POStagger_HMM(object):
                 if suf not in self.suffix:
                     self.suffix[suf] = np.zeros(self.PosSize+1)
                 for Pos in self.Words[word].keys():
-                    self.suffix[suf][self.label[Pos]] += self.Words[word][Pos]
+                    self.suffix[suf][self.label[Pos]] += 1 #self.Words[word][Pos]
         for suf in self.suffix.keys():
+            self.suffix[suf] += 1
             total = np.sum(self.suffix[suf])
-            if total >= 10:
+            if total >= 5:
                 self.suffix[suf] *= 1./np.sum(self.suffix[suf])
+                self.suffix[suf] = np.log2(self.suffix[suf])
             else:
                 self.suffix.pop(suf)
-
-        # print len(self.suffix)
-        # print self.suffix
+        # morphological model
+        self.morph = np.zeros([self.morphCatNum,self.PosSize+1])
+        for word in self.Words:
+            cat = self.morphCat(word)
+            for Pos in self.Words[word].keys():
+                self.morph[cat,self.label[Pos]] += 1
+        
+        # print self.morph 
+        # print np.sum(self.morph,axis=1)
+        for vec in self.morph:
+            vec += 1
+            vec *= 1./np.sum(vec)
+            vec = np.log2(vec)
 
         self.unknown = np.zeros(self.PosSize+1)
         # transition probabilities
@@ -111,19 +153,21 @@ class POStagger_HMM(object):
             for Pos in Ptrans[PosPre]:
                 self.TransMat[i,self.label[Pos]] = Ptrans[PosPre][Pos] 
         for vec in self.TransMat:
+            vec += 1
             vec /= np.sum(vec)
+            vec = np.log2(vec)
         self.TransMat = self.TransMat.T     # For cache friendliness
         # emission probabilities
         for Pos in self.Pemit:
             vec = np.array(self.Pemit[Pos].values())
             total = np.sum(vec)
-            if Pos in openClass:
+            if Pos in self.openClass:
                 self.unknown[self.label[Pos]] = np.sum(vec <= threshold)*1./total
-            # self.PosCount[Pos] = total
+                # self.PosCount[Pos] = total
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
-        for suf in self.suffix:
-            self.suffix[suf] = self.suffix[suf] * lam + (1-lam)*self.unknown
+                self.Pemit[Pos][word] = np.log2(self.Pemit[Pos][word])
+        self.unknown = np.log2(self.unknown)
 
 
     def getPosTransEmit(self,word,i):
@@ -132,20 +176,25 @@ class POStagger_HMM(object):
             for Pos in self.Words[word].keys():
                 ret.append((Pos,self.Pemit[Pos][word]))
         else:
-            print word
-            sufl = suflen if len(word) >= suflen else len(word)
-            suf = word[-sufl:]
-            if suf in self.suffix:
-                ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown*self.suffix[suf])]
-            else: 
-                ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown)]
+            cat = self.morphCat(word)
+            # print word, cat
+            flag = 0
+            numsuf = suflen if len(word)>=suflen else len(word)
+            sufl = [word[-i:] for i in range (numsuf,0,-1)] 
+            for suf in sufl:
+                if suf in self.suffix:
+                    ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown+self.suffix[suf]+self.morph[cat])]
+                    flag = 1
+                    break
+            if flag == 0:
+                ret = [(Pos,emit) for (Pos,emit) in zip(self.tag,self.unknown+self.morph[cat])]
         return ret 
 
     def tagSentence(self,snt):
         T = len(snt)
-        Vtb = np.zeros([T+2,self.PosSize+1])
+        Vtb = np.ones([T+2,self.PosSize+1]) * -np.inf
         Trace = np.ones([T+2,self.PosSize+1])*-1
-        Vtb[0,self.label['START']] = 1
+        Vtb[0,self.label['START']] = 0
         ret = []
         for i in range(1,T+1):
             # Vtb[i,self.label[Pos]] = np.max( Vtb[i] * trans * emit )
@@ -154,13 +203,13 @@ class POStagger_HMM(object):
             # print PosSet
             for Pos,emit in PosSet:
                 trans = self.TransMat[self.label[Pos]]
-                tmp = Vtb[i-1] * trans * emit
+                tmp = Vtb[i-1] + trans + emit
                 Vtb[i,self.label[Pos]] = np.max(tmp)
                 Trace[i,self.label[Pos]] = np.argmax(tmp)
 
         i = T+1
         trans = self.TransMat[self.label['END']]
-        tmp = Vtb[i-1] * trans
+        tmp = Vtb[i-1] + trans
         Vtb[i,self.label[Pos]] = np.max(tmp)
         Trace[i,self.label[Pos]] = np.argmax(tmp)
         lastPos = np.argmax(tmp)
@@ -169,8 +218,10 @@ class POStagger_HMM(object):
             ret.append(self.tag[lastPos])
             lastPos = int(Trace[i,lastPos])
         ret.reverse()
-        # print Trace
-        # print Vtb
+        if 'START' in ret:
+            print snt 
+            print Trace
+            print Vtb
         return ret     
 
     def tagFile(self,path,fout):
