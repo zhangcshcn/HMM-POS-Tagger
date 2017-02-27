@@ -8,8 +8,7 @@
 # sentences are separated by empty lines
 #
 
-import csv
-unknown = set([token[0] for token in csv.reader(file('unknown'))])
+import sys
 
 def score (keyFileName, responseFileName):
     keyFile = open(keyFileName, 'r')
@@ -49,15 +48,13 @@ def score (keyFileName, responseFileName):
         if responsePos == keyPos:
             correct = correct + 1
         else:
-            if keyToken in unknown:
-            	unknownic += 1
-                print 'unknown',i,keyToken,responsePos,'should be',keyPos
-            #else:
-                # print i,keyToken,responsePos,'should be',keyPos
             incorrect = incorrect + 1
     print str(correct) + " out of " + str(correct + incorrect) + " tags correct"
     accuracy = 100.0 * correct / (correct + incorrect)
     print "  accuracy: %f" % accuracy
-    print 'unknown:',unknownic
 
-score ('WSJ_POS_CORPUS_FOR_STUDENTS/WSJ_24.pos','WSJ_24.pos')
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        score ('WSJ_POS_CORPUS_FOR_STUDENTS/WSJ_24.pos','WSJ_24.pos')
+    else:
+        score ('WSJ_POS_CORPUS_FOR_STUDENTS/'+sys.argv[1]+'.pos',sys.argv[1]+'.pos')

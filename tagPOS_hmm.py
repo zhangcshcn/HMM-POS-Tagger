@@ -124,7 +124,6 @@ class POStagger_HMM(object):
             PosPre = Pos 
         ftrain.close()
         self.PosSize = len(self.Pemit)
-        self.PosTupSize = len(Ptrans)
         self.label = {Pos:enum for enum, Pos in enumerate(self.Pemit)}
         tmp = [(self.label[Pos],Pos) for Pos in self.label]
         tmp.sort()
@@ -146,15 +145,12 @@ class POStagger_HMM(object):
             if total >= 5:
                 self.suffix[suf] += 1
                 self.suffix[suf] *= 1./np.sum(self.suffix[suf])
-                #self.suffix[suf] = np.log2(self.suffix[suf])
             else:
                 self.suffix.pop(suf)
         # Morphological model
         self.morph = np.zeros([self.morphCatNum,self.PosSize+1])
         for word in self.Words:
             cat = self.morphCat(word)
-            # if cat == 9:
-            #     print word 
             for Pos in self.Words[word].keys():
                 if cat > 1:
                     self.morph[cat,self.label[Pos]] += 1
@@ -163,9 +159,8 @@ class POStagger_HMM(object):
                         self.morph[cat,self.label[Pos]] += 1
         for vec in self.morph:
             vec = vec+1
-            vec /= np.sum(vec)
-            #vec = np.log2(vec)
-
+            vec = 1./np.sum(vec)
+        
         # Transition probabilities
         self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1,self.PosSize+1])
         for PosPre in Ptrans:
@@ -180,8 +175,7 @@ class POStagger_HMM(object):
         self.TransMat += 1
         for mat in self.TransMat:
             for vec in mat:
-                vec /= np.sum(vec)
-            #vec = np.log2(vec)
+                vec *= 1./np.sum(vec)
         # Emission rates
         self.unknown = np.zeros(self.PosSize+1)
         for Pos in self.Pemit:
@@ -192,8 +186,7 @@ class POStagger_HMM(object):
                 # self.PosCount[Pos] = total
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
-                #self.Pemit[Pos][word] = np.log2(self.Pemit[Pos][word])
-        self.unknown /= np.sum(self.unknown)
+        self.unknown *= 1./np.sum(self.unknown)
         #self.unknown = np.log2(self.unknown)
 
     # Generate the emission rate for unknown words
@@ -314,4 +307,3 @@ if __name__ == '__main__':
         fout = open(sys.argv[2]+".pos","w")
         tagger.tagFile(dataPath+sys.argv[2]+".words",fout)
         fout.close()
-
