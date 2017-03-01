@@ -6,8 +6,6 @@ import csv, sys, re
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
 threshold = 1
 suflen = 2
-lam3 = 0.5
-lam2 = 0.5
 
 class POStagger_HMM(object):
     def __init__(self):
@@ -19,6 +17,8 @@ class POStagger_HMM(object):
                  'NNP','NNPS','NNS','RB','RBR','RBS','UH',\
                  'VB','VBD','VBG','VBN','VBP','VBZ','SYM'])
         self.morphCatNum = 16  
+        self.lam2 = 0
+        self.lam3 = 0
 
     # Use regex to determine the morphological features of words
     def morphCat(self,word):
@@ -162,7 +162,6 @@ class POStagger_HMM(object):
         for vec in self.morph:
             vec = vec+1
             vec = 1./np.sum(vec)
-        
         # Transition probabilities
         self.TransMat = np.zeros([self.PosSize+1,self.PosSize+1,self.PosSize+1])
         for PosPre in Ptrans:
@@ -189,11 +188,17 @@ class POStagger_HMM(object):
             total = np.sum(vec)
             if Pos in self.openClass:
                 self.unknown[self.label[Pos]] = np.sum(vec <= threshold)*1./total
-                # self.PosCount[Pos] = total
             for word in self.Pemit[Pos]:
                 self.Pemit[Pos][word] *= 1./total
         self.unknown *= 1./np.sum(self.unknown)
-        #self.unknown = np.log2(self.unknown)
+        # Get lambda 
+        isg = self.TransMat[1:,:-1] >= self.TransMat2[1:,:-1]
+        self.lam3 = np.sum(self.TransMat[1:,:-1][isg])
+        self.lam2 = np.sum(self.TransMat2[1:,:-1][isg != True])
+        total = self.lam2 + self.lam3
+        self.lam3 /= total
+        self.lam2 /= total
+        # print self.lam3, self.lam2 
 
     # Generate the emission rate for unknown words
     def getPosTransEmit(self,word):
@@ -234,32 +239,12 @@ class POStagger_HMM(object):
             word = snt[i-1]
             PosSet = self.getPosTransEmit(word)
             for Pos,emit in PosSet:
-                ''' The old fashion way 
-                for j in range(self.PosSize+1): 
-                # Vtb[t,s^{-1},s] = \max_{s^{-2}}
-                #                      Vtb[t-1,s^{-2},s^{-1}] 
-                #                    * P(s|s^{-2}s^{-1})} 
-                #                    * P(w_i|s)
-                    tmp = Vtb[i-1,:,j] * self.TransMat[:,j,self.label[Pos]] * emit *100
-                    # tmp = Vtb[i-1] + trans + emit
-                    Vtb[i,j,self.label[Pos]] = np.max(tmp)
-                    Trace[i,j,self.label[Pos]] = np.argmax(tmp)
-                ''' 
-                # The matricized method outperform the old-fashioned way
-                # by more than 10 times. 
-                tmp = Vtb[i-1] * (lam3*self.TransMat[:,:,self.label[Pos]] + lam2*self.TransMat2[:,:,self.label[Pos]])
+                tmp = Vtb[i-1] * (self.lam3*self.TransMat[:,:,self.label[Pos]] + self.lam2*self.TransMat2[:,:,self.label[Pos]])
                 Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0) * emit *100
                 Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
         i = T+1
-        ''' The old fashioned way
-        for j in range(self.PosSize+1):
-            tmp = Vtb[i-1,:,j] * self.TransMat[:,j,self.label['END']] *100
-            # tmp = Vtb[i-1] + trans
-            Vtb[i,j,self.label['END']] = np.max(tmp) 
-            Trace[i,j,self.label['END']] = np.argmax(tmp)
-        '''
         Pos = 'END'
-        tmp = Vtb[i-1] * (lam3*self.TransMat[:,:,self.label[Pos]] + lam2*self.TransMat2[:,:,self.label[Pos]]) 
+        tmp = Vtb[i-1] * (self.lam3*self.TransMat[:,:,self.label[Pos]] + self.lam2*self.TransMat2[:,:,self.label[Pos]]) 
         Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0)
         Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
         ToPos = self.label['END']
