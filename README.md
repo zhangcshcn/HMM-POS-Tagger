@@ -2,9 +2,11 @@ Author: Chen Zhang, with NYU Courant Institute of Mathematical Science
 Email:  chen.zhang@nyu.edu
 
 ### Brief Description
+
 This is the solution to assignment 4 of CSCI_GA.2590 Natural Language Processing Spring 2017, taught by Prof. Grishman. The code carries out Part-of-Speech tagging using HMM model. 
 
 ### Features
+
 * 1st-Order Markov Model and 2nd-Order Markov model are hybrided in the solution. 
 * Unknown words handled using
     - Hapax Legomena with open class to approximate the basic POS distribution over unknown word 
@@ -17,6 +19,7 @@ This is the solution to assignment 4 of CSCI_GA.2590 Natural Language Processing
 * Vectorized and Matricized computation for better performance 
 
 ### Requiremnts
+
 * numpy
 
 ### Instrucions
