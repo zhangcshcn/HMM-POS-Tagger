@@ -6,7 +6,8 @@ import csv, sys, re
 dataPath = 'WSJ_POS_CORPUS_FOR_STUDENTS/'
 threshold = 1
 suflen = 2
-lam = 0.3
+lam3 = 0.5
+lam2 = 0.5
 
 class POStagger_HMM(object):
     def __init__(self):
@@ -172,10 +173,14 @@ class POStagger_HMM(object):
                 j = self.label[PosPre[1]]
             for Pos in Ptrans[PosPre]:
                 self.TransMat[i,j,self.label[Pos]] = Ptrans[PosPre][Pos] 
+        self.TransMat2 = np.sum(self.TransMat,axis=0)
         self.TransMat += 1
         for mat in self.TransMat:
             for vec in mat:
                 vec *= 1./np.sum(vec)
+        for vec in self.TransMat2:
+            vec *= 1./np.sum(vec)
+        self.TransMat2 = self.TransMat2*np.ones([self.PosSize+1,self.PosSize+1,self.PosSize+1])
         # Emission rates
         self.unknown = np.zeros(self.PosSize+1)
         for Pos in self.Pemit:
@@ -241,7 +246,7 @@ class POStagger_HMM(object):
                 ''' 
                 # The matricized method outperform the old-fashioned way
                 # by more than 10 times. 
-                tmp = Vtb[i-1] * self.TransMat[:,:,self.label[Pos]] 
+                tmp = Vtb[i-1] * (lam3*self.TransMat[:,:,self.label[Pos]] + lam2*self.TransMat2[:,:,self.label[Pos]])
                 Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0) * emit *100
                 Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
         i = T+1
@@ -253,7 +258,7 @@ class POStagger_HMM(object):
             Trace[i,j,self.label['END']] = np.argmax(tmp)
         '''
         Pos = 'END'
-        tmp = Vtb[i-1] * self.TransMat[:,:,self.label[Pos]] 
+        tmp = Vtb[i-1] * (lam3*self.TransMat[:,:,self.label[Pos]] + lam2*self.TransMat2[:,:,self.label[Pos]]) 
         Vtb[i,:,self.label[Pos]] = np.max(tmp,axis = 0)
         Trace[i,:,self.label[Pos]] = np.argmax(tmp,axis=0)
         ToPos = self.label['END']
