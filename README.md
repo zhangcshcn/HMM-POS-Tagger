@@ -44,3 +44,8 @@ There are 3 ways to run the tagger:
     and use  *WSJ_POS_CORPUS_FOR_STUDENTS/testfile.words* as test input.  
     *./testfile.pos* will be generated as output.  
 
+### Reference
+1. Thorsten Brants. 2000. TnT: a statistical part-of-speech tagger. In Proceedings of the sixth conference on Applied natural language processing (ANLC '00). Association for Computational Linguistics, Stroudsburg, PA, USA, 224-231. DOI=http://dx.doi.org/10.3115/974147.974178 
+2. Ralph Weischedel, Richard Schwartz, Jeff Palmucci, Marie Meteer, and Lance Ramshaw. 1993. Coping with ambiguity and unknown words through probabilistic models. Comput. Linguist. 19, 2 (June 1993), 361-382. 
+3. Ratnaparkhi, A., 1996. A maximum entropy model for part-of-speech tagging. In Proceedings of the conference on empirical methods in natural language processing (Vol. 1, pp. 133-142).
+
