@@ -67,63 +67,64 @@ class POStagger_HMM(object):
         else:
             return 14
 
-    # - Train the 2nd-Order Markov Model. Compute the emission rate 
-    #   and the 2nd-order transition probabilities. 
+    # - Train the 1st and 2nd-Order Markov Models. 
     # - Use the Hapax Legomena with Open Class. Train models with  
     #   morphological and suffix features respectively. 
-    def train(self,path):
-        PosPre = 'START'
-        PosPP = ''
-        Ptrans= { PosPre:{} }   # { (Pos,Pos): { Pos : count }}
-        self.path = path
-        try:
-            ftrain = open(path,'r')
-        except:
-            print 'Error opening the file... Please try again... '
-            exit()
-        # read the file once and ...
-        for line in csv.reader(ftrain,delimiter='\t'):
-            if len(line) == 0:
-                Pos = 'END'
-                if (PosPP,PosPre) not in Ptrans:
-                    Ptrans[(PosPP,PosPre)] = {Pos:1}
-                elif Pos not in Ptrans[(PosPP,PosPre)]:
-                    Ptrans[(PosPP,PosPre)][Pos] = 1
+    def train(self,paths):
+        Ptrans= { 'START':{} }   # { (Pos,Pos): { Pos : count }}
+        self.paths = paths
+        for path in paths:
+            try:
+                ftrain = open(dataPath+path,'r')
+            except:
+                print 'Error opening the file... Please try again... '
+                exit()
+            # read the file once and ...
+            PosPre = 'START'
+            PosPP = ''
+            for line in csv.reader(ftrain,delimiter='\t'):
+                if len(line) == 0:
+                    Pos = 'END'
+                    if (PosPP,PosPre) not in Ptrans:
+                        Ptrans[(PosPP,PosPre)] = {Pos:1}
+                    elif Pos not in Ptrans[(PosPP,PosPre)]:
+                        Ptrans[(PosPP,PosPre)][Pos] = 1
+                    else:
+                        Ptrans[(PosPP,PosPre)][Pos] += 1
+                    PosPre = 'START'
+                    continue            
+                word,Pos = line[0],line[1]
+                # word POS
+                if word not in self.Words:
+                    self.Words[word] = { Pos : 1 }
+                elif Pos not in self.Words[word]:
+                    self.Words[word][Pos] = 1
                 else:
-                    Ptrans[(PosPP,PosPre)][Pos] += 1
-                PosPre = 'START'
-                continue            
-            word,Pos = line[0],line[1]
-            # word POS
-            if word not in self.Words:
-                self.Words[word] = { Pos : 1 }
-            elif Pos not in self.Words[word]:
-                self.Words[word][Pos] = 1
-            else:
-                self.Words[word][Pos] += 1
-            # emission count
-            if Pos not in self.Pemit:
-                self.Pemit[Pos] = {word:1}
-            elif word not in self.Pemit[Pos]:
-                self.Pemit[Pos][word] = 1
-            else:
-                self.Pemit[Pos][word] += 1
-            # transition count
-            if PosPre == 'START':
-                if Pos not in Ptrans['START']:
-                    Ptrans['START'][Pos] = 1
+                    self.Words[word][Pos] += 1
+                # emission count
+                if Pos not in self.Pemit:
+                    self.Pemit[Pos] = {word:1}
+                elif word not in self.Pemit[Pos]:
+                    self.Pemit[Pos][word] = 1
                 else:
-                    Ptrans['START'][Pos] += 1
-            else:
-                if (PosPP,PosPre) not in Ptrans:
-                    Ptrans[(PosPP,PosPre)] = { Pos : 1 } 
-                elif Pos not in Ptrans[(PosPP,PosPre)]:
-                    Ptrans[(PosPP,PosPre)][Pos] = 1
+                    self.Pemit[Pos][word] += 1
+                # transition count
+                if PosPre == 'START':
+                    if Pos not in Ptrans['START']:
+                        Ptrans['START'][Pos] = 1
+                    else:
+                        Ptrans['START'][Pos] += 1
                 else:
-                    Ptrans[(PosPP,PosPre)][Pos] += 1
-            PosPP = PosPre
-            PosPre = Pos 
-        ftrain.close()
+                    if (PosPP,PosPre) not in Ptrans:
+                        Ptrans[(PosPP,PosPre)] = { Pos : 1 } 
+                    elif Pos not in Ptrans[(PosPP,PosPre)]:
+                        Ptrans[(PosPP,PosPre)][Pos] = 1
+                    else:
+                        Ptrans[(PosPP,PosPre)][Pos] += 1
+                PosPP = PosPre
+                PosPre = Pos 
+            ftrain.close()
+
         self.PosSize = len(self.Pemit)
         self.label = {Pos:enum for enum, Pos in enumerate(self.Pemit)}
         tmp = [(self.label[Pos],Pos) for Pos in self.label]
@@ -288,14 +289,15 @@ class POStagger_HMM(object):
         fin.close()
 
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        filePath = 'WSJ_02-21.pos'
-    else:
-        filePath = sys.argv[1]
-    path = dataPath + filePath
+    if len(sys.argv) <= 2:
+        paths = ['WSJ_02-21.pos']
+    if len(sys.argv) >= 2:
+        testPath = sys.argv[1]
+    if len(sys.argv) >= 3:
+        paths = sys.argv[2:]
     tagger = POStagger_HMM()
-    tagger.train(path)
-    if len(sys.argv) < 3:
+    tagger.train(paths)
+    if len(sys.argv) == 1:
         while True:
             try:
                 sentence = input('Enter a sentence: ')
@@ -309,6 +311,6 @@ if __name__ == '__main__':
             except:
                 break
     else: 
-        fout = open(sys.argv[2]+".pos","w")
-        tagger.tagFile(dataPath+sys.argv[2]+".words",fout)
+        fout = open(testPath+".pos","w")
+        tagger.tagFile(dataPath+testPath+".words",fout)
         fout.close()
