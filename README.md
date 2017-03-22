@@ -27,22 +27,35 @@ Place the *tagPOS_hmm.py* in the parent directory of *WSJ_POS_CORPUS_FOR_STUDENT
 
 There are 3 ways to run the tagger: 
 > 
-> 1. python tagPOS_hmm.py  
+> python tagPOS_hmm.py  
 > 
    This will take *WSJ_POS_CORPUS_FOR_STUDENTS/WSJ_02-21.pos* as the training file,  
    and let the user enter space divided tokens with sentence structure as input.  
 > 
-> 2. python tagPOS_hmm.py testfile  
+> python tagPOS_hmm.py testfile  
 > 
     This will take *WSJ_POS_CORPUS_FOR_STUDENTS/WSJ_02-21.pos* as the training file,  
     and use  *WSJ_POS_CORPUS_FOR_STUDENTS/testfile.words* as test input.  
     *./testfile.pos* will be generated as output.   
 > 
-> 3. python tagPOS_hmm.py testfile training-file1.pos training-file2.pos ...  
+> python tagPOS_hmm.py testfile training-file1.pos training-file2.pos ...  
 > 
-    This will take *WSJ_POS_CORPUS_FOR_STUDENTS/training-file1.pos*, *WSJ_POS_CORPUS_FOR_STUDENTS/training-file2.pos*, ... as the training files,  
-    and use  *WSJ_POS_CORPUS_FOR_STUDENTS/testfile.words* as test input.  
-    *./testfile.pos* will be generated as output.  
+    This will take 
+    
+    - *WSJ_POS_CORPUS_FOR_STUDENTS/training-file1.pos*, 
+    - *WSJ_POS_CORPUS_FOR_STUDENTS/training-file2.pos*, 
+    - ... 
+    
+    as the training files,  
+    and use  
+    
+    - *WSJ_POS_CORPUS_FOR_STUDENTS/testfile.words* 
+    
+    as test input.  
+    
+    - *./testfile.pos* 
+    
+    will be generated as output.  
 
 ### Reference
 1. Thorsten Brants. 2000. TnT: a statistical part-of-speech tagger. In Proceedings of the sixth conference on Applied natural language processing (ANLC '00). Association for Computational Linguistics, Stroudsburg, PA, USA, 224-231. DOI=http://dx.doi.org/10.3115/974147.974178 
