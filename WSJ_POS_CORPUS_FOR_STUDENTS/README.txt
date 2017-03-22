@@ -1,3 +1,5 @@
+Notice! I guess the Penn tree bank is under certain form of copyright restriction. Therefore, I consider it in appropriate to disclose it. The following discription should work as a discription of the data format that work with the code. 
+
 The most standard breakdown for training and test purposes of the Penn
 Treebank Corpus is:
 
