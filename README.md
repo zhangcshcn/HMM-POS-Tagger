@@ -3,7 +3,9 @@ Email:  chen.zhang@nyu.edu
 
 ### Brief Description
 
-This is the solution to assignment 4 of CSCI_GA.2590 Natural Language Processing Spring 2017, taught by Prof. Grishman. The code carries out Part-of-Speech tagging using HMM model. 
+This is the solution to assignment 4 of CSCI_GA.2590 Natural Language Processing Spring 2017, taught by Prof. Grishman. The code carries out Part-of-Speech tagging using HMM model.  
+This every submission got the *BEST performance* among all my peers.  
+很惭愧，只做了一点微小的贡献。
 
 ### Features
 
