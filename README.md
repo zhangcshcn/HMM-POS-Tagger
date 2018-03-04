@@ -7,6 +7,9 @@ This is the solution to assignment 4 of CSCI_GA.2590 Natural Language Processing
 This very submission got the *BEST performance* among all my peers.  
 很惭愧，只做了一点微小的贡献。
 
+### Disclaimer
+If you want to use this software for **academic purposes, aka assignments**, please refer to the [**ACADEMIC INTEGRITY**](https://cs.nyu.edu/home/master/current_policy.html).
+
 ### Features
 
 * 1st-Order Markov Model and 2nd-Order Markov model are hybrided in the solution. 
